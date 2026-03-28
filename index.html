@@ -48,6 +48,11 @@
   .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(0,229,255,0.3); }
   .btn-primary:active { transform:translateY(0); }
   .btn-primary:disabled { opacity:0.4; cursor:not-allowed; transform:none; box-shadow:none; }
+
+  .verdict-glow-green { box-shadow: 0 0 30px rgba(0,230,118,0.15), inset 0 0 30px rgba(0,230,118,0.05); }
+  .verdict-glow-red { box-shadow: 0 0 30px rgba(255,23,68,0.15), inset 0 0 30px rgba(255,23,68,0.05); }
+  .verdict-glow-cyan { box-shadow: 0 0 30px rgba(0,229,255,0.15), inset 0 0 30px rgba(0,229,255,0.05); }
+  .verdict-glow-amber { box-shadow: 0 0 30px rgba(255,167,38,0.15), inset 0 0 30px rgba(255,167,38,0.05); }
 </style>
 <script>
 tailwind.config = {
@@ -60,6 +65,7 @@ tailwind.config = {
         cyanDark: '#00B8D4',
         valid: '#00E676',
         invalid: '#FF1744',
+        amber: '#FFA726',
         textPrimary: '#E0E0E0',
         textSecondary: '#9E9E9E',
         textMuted: '#616161',
@@ -139,8 +145,53 @@ function LucideIcon({ name, size = 18, color, className = '' }) {
   return <span ref={ref} className={`inline-flex items-center ${className}`}/>;
 }
 
+/* ---- API Key Manager ---- */
+function useApiKey() {
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('st_api_key') || '');
+  const save = useCallback((key) => {
+    setApiKey(key);
+    if (key) localStorage.setItem('st_api_key', key);
+    else localStorage.removeItem('st_api_key');
+  }, []);
+  return [apiKey, save];
+}
+
+/* ---- Settings Modal ---- */
+function SettingsModal({ open, onClose, apiKey, onSave }) {
+  const [key, setKey] = useState(apiKey);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="surface rounded-xl p-6 w-full max-w-md mx-4 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="font-grotesk font-bold text-base text-textPrimary flex items-center gap-2">
+            <LucideIcon name="settings" size={18} color="#00E5FF"/>
+            Settings
+          </h3>
+          <button onClick={onClose} className="text-textMuted hover:text-textSecondary"><LucideIcon name="x" size={18}/></button>
+        </div>
+        <div>
+          <label className="block text-xs text-textSecondary mb-1.5">Anthropic API Key</label>
+          <input
+            type="password"
+            value={key}
+            onChange={e => setKey(e.target.value)}
+            placeholder="sk-ant-..."
+            className="w-full bg-bg border border-white/10 rounded-lg px-3 py-2.5 text-sm text-textPrimary placeholder-textMuted focus:border-cyan/50 focus:outline-none transition"
+          />
+          <p className="text-textMuted text-[10px] mt-1.5">Your key is stored locally in your browser. Never shared.</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => { onSave(key); onClose(); }} className="btn-primary flex-1 py-2.5 rounded-lg text-sm">Save</button>
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-sm border border-white/10 text-textSecondary hover:bg-white/5 transition">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---- Top Bar ---- */
-function TopBar({ nyTime, mins }) {
+function TopBar({ nyTime, mins, onSettings }) {
   const macroStart = 590;
   const macroEnd = 610;
 
@@ -176,13 +227,18 @@ function TopBar({ nyTime, mins }) {
       <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <span className="font-grotesk font-bold text-lg tracking-tight text-cyan">SIGNALTRADING</span>
-          <span className="text-[10px] font-medium bg-cyan/10 text-cyan px-1.5 py-0.5 rounded">v1.0</span>
+          <span className="text-[10px] font-medium bg-cyan/10 text-cyan px-1.5 py-0.5 rounded">v2.0</span>
         </div>
         <div className="hidden sm:flex flex-col items-center">
           <span className="text-textMuted text-[10px] uppercase tracking-widest">New York</span>
           <span className="font-grotesk font-bold text-2xl tabular-nums text-textPrimary tracking-tight">{formatTime(nyTime)}</span>
         </div>
-        <div className="flex items-center">{macroContent}</div>
+        <div className="flex items-center gap-3">
+          {macroContent}
+          <button onClick={onSettings} className="ml-2 p-1.5 rounded-lg hover:bg-white/5 transition text-textMuted hover:text-cyan">
+            <LucideIcon name="settings" size={16}/>
+          </button>
+        </div>
       </div>
     </header>
   );
@@ -206,29 +262,211 @@ function StatusBar({ sessionStatus }) {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <LucideIcon name="calendar" size={12} color="#616161"/>
-          <span className="text-textMuted">Econ:</span>
-          <span className="bg-valid/10 text-valid px-2 py-0.5 rounded text-[10px] font-semibold uppercase">Clear</span>
+          <LucideIcon name="cpu" size={12} color="#616161"/>
+          <span className="text-textMuted">Engine:</span>
+          <span className="text-cyan text-[10px] font-semibold">Claude Vision</span>
         </div>
       </div>
     </div>
   );
 }
 
+/* ---- Verdict Display Helpers ---- */
+function getVerdictConfig(verdict) {
+  const map = {
+    'EXECUTE': { label: 'EXECUTE', color: '#00E676', bg: 'bg-valid/10', border: 'border-valid/20', glow: 'verdict-glow-green', icon: 'check-circle-2' },
+    'EXECUTE_WITH_CAUTION': { label: 'EXECUTE WITH CAUTION', color: '#FFA726', bg: 'bg-amber/10', border: 'border-amber/20', glow: 'verdict-glow-amber', icon: 'alert-triangle' },
+    'BIAS_IDENTIFIED_MONITOR': { label: 'BIAS IDENTIFIED — MONITOR', color: '#00E5FF', bg: 'bg-cyan/10', border: 'border-cyan/20', glow: 'verdict-glow-cyan', icon: 'eye' },
+    'MODEL_FAILURE_EXECUTE_NEW_DIRECTION': { label: 'MODEL FAILURE — NEW DIRECTION', color: '#FFA726', bg: 'bg-amber/10', border: 'border-amber/20', glow: 'verdict-glow-amber', icon: 'alert-triangle' },
+    'INVALID_NEWS_DAY': { label: 'INVALID — NEWS DAY', color: '#FF1744', bg: 'bg-invalid/10', border: 'border-invalid/20', glow: 'verdict-glow-red', icon: 'x-circle' },
+    'INVALID_NO_SETUP': { label: 'INVALID — NO SETUP', color: '#FF1744', bg: 'bg-invalid/10', border: 'border-invalid/20', glow: 'verdict-glow-red', icon: 'x-circle' },
+  };
+  return map[verdict] || { label: verdict, color: '#9E9E9E', bg: 'bg-white/5', border: 'border-white/10', glow: '', icon: 'help-circle' };
+}
+
+function LevelCheck({ label, status }) {
+  const found = status === 'FOUND';
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <LucideIcon name={found ? 'check' : 'x'} size={13} color={found ? '#00E676' : '#FF1744'}/>
+      <span className="text-xs text-textSecondary">{label}</span>
+      <span className={'ml-auto text-[10px] font-semibold uppercase ' + (found ? 'text-valid' : 'text-invalid')}>{status}</span>
+    </div>
+  );
+}
+
+function PriceLevel({ label, value }) {
+  const colors = { 'ABOVE': '#FF1744', 'BELOW': '#00E676', 'UNCLEAR': '#FFA726' };
+  const icons = { 'ABOVE': 'arrow-up', 'BELOW': 'arrow-down', 'UNCLEAR': 'minus' };
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <LucideIcon name={icons[value] || 'minus'} size={13} color={colors[value] || '#616161'}/>
+      <span className="text-xs text-textSecondary">{label}</span>
+      <span className="ml-auto text-[10px] font-bold uppercase" style={{color: colors[value] || '#616161'}}>{value}</span>
+    </div>
+  );
+}
+
+/* ---- Structured Verdict Panel ---- */
+function VerdictPanel({ analysis }) {
+  const vc = getVerdictConfig(analysis.verdict);
+
+  return (
+    <div className="fade-in space-y-3">
+      {/* Main Verdict Banner */}
+      <div className={`rounded-xl px-5 py-4 ${vc.bg} border ${vc.border} ${vc.glow}`}>
+        <div className="flex items-center gap-3 mb-2">
+          <LucideIcon name={vc.icon} size={24} color={vc.color}/>
+          <span className="font-grotesk font-bold text-lg" style={{color: vc.color}}>{vc.label}</span>
+        </div>
+        <p className="text-textSecondary text-sm leading-relaxed">{analysis.verdictSummary}</p>
+      </div>
+
+      {/* Direction + Bias + Target Row */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="surface rounded-lg p-3 text-center">
+          <span className="text-textMuted text-[10px] uppercase tracking-wider block mb-1">Bias</span>
+          <span className={'font-grotesk font-bold text-base ' + (analysis.activeBias === 'LONG' ? 'text-valid' : analysis.activeBias === 'SHORT' ? 'text-invalid' : 'text-textMuted')}>
+            {analysis.activeBias}
+          </span>
+        </div>
+        <div className="surface rounded-lg p-3 text-center">
+          <span className="text-textMuted text-[10px] uppercase tracking-wider block mb-1">Direction</span>
+          <span className={'font-grotesk font-bold text-base ' + (analysis.activeDirection === 'LONG' ? 'text-valid' : analysis.activeDirection === 'SHORT' ? 'text-invalid' : 'text-textMuted')}>
+            {analysis.activeDirection}
+          </span>
+        </div>
+        <div className="surface rounded-lg p-3 text-center">
+          <span className="text-textMuted text-[10px] uppercase tracking-wider block mb-1">Target</span>
+          <span className="font-grotesk font-semibold text-xs text-cyan">
+            {(analysis.activeTarget || '').replace(/_/g, ' ')}
+          </span>
+        </div>
+      </div>
+
+      {/* Time + Tier Row */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="surface rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-1.5">
+            <LucideIcon name="clock" size={13} color="#00E5FF"/>
+            <span className="text-textMuted text-[10px] uppercase tracking-wider">Time Read</span>
+          </div>
+          <span className="font-grotesk font-semibold text-sm text-textPrimary">{analysis.timeRead}</span>
+          <span className={'ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded ' +
+            (analysis.timeStatus === 'MACRO_ACTIVE' ? 'bg-valid/10 text-valid' :
+             analysis.timeStatus === 'PRE_MACRO' ? 'bg-cyan/10 text-cyan' :
+             'bg-invalid/10 text-invalid')}>
+            {analysis.timeStatus}
+          </span>
+        </div>
+        <div className="surface rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-1.5">
+            <LucideIcon name="layers" size={13} color="#00E5FF"/>
+            <span className="text-textMuted text-[10px] uppercase tracking-wider">Tier Model</span>
+          </div>
+          <span className="font-grotesk font-semibold text-sm text-textPrimary">{(analysis.tier || '').replace('_', ' ')}</span>
+          <p className="text-textMuted text-[10px] mt-0.5">{analysis.tierReason}</p>
+        </div>
+      </div>
+
+      {/* Levels Found */}
+      <div className="surface rounded-lg p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <LucideIcon name="map-pin" size={13} color="#00E5FF"/>
+          <span className="text-textMuted text-[10px] uppercase tracking-wider">Levels Detected</span>
+        </div>
+        <div className="grid grid-cols-2 gap-x-4">
+          <LevelCheck label="Prev Day Close" status={analysis.levelsFound?.prevDayClose}/>
+          <LevelCheck label="Midnight Open" status={analysis.levelsFound?.midnightOpen}/>
+          <LevelCheck label="8:30 Open" status={analysis.levelsFound?.open830}/>
+          <LevelCheck label="9:30 Open" status={analysis.levelsFound?.open930}/>
+        </div>
+      </div>
+
+      {/* Price vs Levels */}
+      <div className="surface rounded-lg p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <LucideIcon name="bar-chart-3" size={13} color="#00E5FF"/>
+          <span className="text-textMuted text-[10px] uppercase tracking-wider">Price vs Levels</span>
+        </div>
+        <PriceLevel label="vs Midnight Open" value={analysis.priceVsLevels?.vsMidnightOpen}/>
+        <PriceLevel label="vs Prev Day Close" value={analysis.priceVsLevels?.vsPrevDayClose}/>
+        <PriceLevel label="vs 8:30 Open" value={analysis.priceVsLevels?.vsOpen830}/>
+        <div className="mt-2 pt-2 border-t border-white/5">
+          <p className="text-textSecondary text-[11px]"><span className="text-cyan font-medium">Bias Reason:</span> {analysis.biasReason}</p>
+          {analysis.otherLevelsNote && <p className="text-textMuted text-[10px] mt-0.5">{analysis.otherLevelsNote}</p>}
+        </div>
+      </div>
+
+      {/* FVG Status */}
+      <div className="surface rounded-lg p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <LucideIcon name="square" size={13} color="#00E5FF"/>
+          <span className="text-textMuted text-[10px] uppercase tracking-wider">Fair Value Gap</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <LucideIcon name={analysis.fvgPresent ? 'check' : 'x'} size={13} color={analysis.fvgPresent ? '#00E676' : '#FF1744'}/>
+            <span className="text-xs text-textSecondary">{analysis.fvgPresent ? 'Present' : 'Not Found'}</span>
+          </div>
+          {analysis.fvgPresent && (
+            <div className="flex items-center gap-1.5">
+              <LucideIcon name={analysis.fvgEngaged ? 'check' : 'minus'} size={13} color={analysis.fvgEngaged ? '#00E676' : '#FFA726'}/>
+              <span className="text-xs text-textSecondary">{analysis.fvgEngaged ? 'Engaged' : 'Not Engaged'}</span>
+            </div>
+          )}
+          {analysis.fvgLabel && analysis.fvgLabel !== 'not found' && (
+            <span className="text-[10px] text-cyan bg-cyan/10 px-1.5 py-0.5 rounded">{analysis.fvgLabel}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Midpoint Scenario */}
+      {analysis.midpointScenario && analysis.midpointScenario.scenarioLabel !== 'NOT_APPLICABLE' && (
+        <div className="surface rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <LucideIcon name="git-branch" size={13} color="#00E5FF"/>
+            <span className="text-textMuted text-[10px] uppercase tracking-wider">Midpoint Scenario</span>
+            <span className="text-[10px] font-bold text-cyan bg-cyan/10 px-1.5 py-0.5 rounded ml-auto">
+              Scenario {analysis.midpointScenario.scenarioLabel}
+            </span>
+          </div>
+          <p className="text-textSecondary text-xs leading-relaxed">{analysis.midpointScenario.scenarioSummary}</p>
+        </div>
+      )}
+
+      {/* Invalid Reasons */}
+      {analysis.invalidReasons && analysis.invalidReasons.length > 0 && (
+        <div className="bg-invalid/5 border border-invalid/20 rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <LucideIcon name="alert-octagon" size={13} color="#FF1744"/>
+            <span className="text-invalid text-[10px] uppercase tracking-wider font-semibold">Issues</span>
+          </div>
+          {analysis.invalidReasons.map((r, i) => (
+            <p key={i} className="text-invalid/80 text-xs">• {r}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---- Chart Upload / Validator ---- */
-function Validator() {
+function Validator({ apiKey }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [verdict, setVerdict] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [error, setError] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
 
   const handleFile = useCallback((f) => {
     if (!f) return;
-    if (!['image/png','image/jpeg','image/jpg'].includes(f.type)) return;
+    if (!['image/png','image/jpeg','image/jpg','image/webp'].includes(f.type)) return;
     setFile(f);
-    setVerdict(null);
+    setAnalysis(null);
+    setError(null);
     const reader = new FileReader();
     reader.onload = (e) => setPreview(e.target.result);
     reader.readAsDataURL(f);
@@ -236,83 +474,40 @@ function Validator() {
 
   const onDrop = useCallback((e) => {
     e.preventDefault(); setDragOver(false);
-    const f = e.dataTransfer.files[0];
-    handleFile(f);
+    handleFile(e.dataTransfer.files[0]);
   }, [handleFile]);
 
-  const analyze = useCallback(() => {
+  const analyze = useCallback(async () => {
+    if (!apiKey) {
+      setError('No API key set. Click the gear icon in the top bar to add your Anthropic API key.');
+      return;
+    }
     setAnalyzing(true);
-    setVerdict(null);
-    const delay = 2000 + Math.random() * 1500;
-    setTimeout(() => {
-      const isValid = Math.random() > 0.35;
-      const nyNow = getNYTime();
-      const h = nyNow.getHours();
-      const m = nyNow.getMinutes();
-      const timeStr = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ' NY';
+    setAnalysis(null);
+    setError(null);
 
-      if (isValid) {
-        setVerdict({
-          valid: true,
-          label: 'VALID SETUP',
-          checks: [
-            { pass: true, label: 'Time Window', detail: timeStr + ' \u2014 Within Macro Range' },
-            { pass: true, label: 'Price vs Midnight Open (00:00)', detail: 'Price below \u2014 Long Bias confirmed' },
-            { pass: true, label: 'Price vs 08:30 Open', detail: 'Price below \u2014 Aligned' },
-            { pass: true, label: 'Price vs Previous Close (16:14)', detail: 'Price below \u2014 Aligned' },
-            { pass: true, label: 'FVG Present', detail: 'Bullish FVG detected after 09:30' },
-            { pass: true, label: 'Tier Model', detail: 'Tier 1 \u2014 Judas Swing identified' },
-          ],
-          risk: 'Draw on liquidity targets Previous Day Close at 1.0847'
-        });
-      } else {
-        const templates = [
-          {
-            label: 'INVALID \u2014 NO FVG DETECTED',
-            checks: [
-              { pass: true, label: 'Time Window', detail: timeStr + ' \u2014 Within Macro Range' },
-              { pass: true, label: 'Price vs Midnight Open (00:00)', detail: 'Price below \u2014 Long Bias confirmed' },
-              { pass: true, label: 'Price vs 08:30 Open', detail: 'Price below \u2014 Aligned' },
-              { pass: false, label: 'Price vs Previous Close (16:14)', detail: 'Price above \u2014 Misaligned with bias' },
-              { pass: false, label: 'FVG Present', detail: 'No Fair Value Gap detected in range' },
-              { pass: true, label: 'Tier Model', detail: 'Tier 3 \u2014 Consolidation pattern' },
-            ],
-            risk: 'Insufficient displacement. Wait for next macro window.'
-          },
-          {
-            label: 'INVALID \u2014 TIME WINDOW VIOLATION',
-            checks: [
-              { pass: false, label: 'Time Window', detail: timeStr + ' \u2014 Outside macro window' },
-              { pass: true, label: 'Price vs Midnight Open (00:00)', detail: 'Price above \u2014 Short Bias' },
-              { pass: true, label: 'Price vs 08:30 Open', detail: 'Price above \u2014 Aligned' },
-              { pass: true, label: 'Price vs Previous Close (16:14)', detail: 'Price above \u2014 Aligned' },
-              { pass: true, label: 'FVG Present', detail: 'Bearish FVG at 09:35' },
-              { pass: false, label: 'Tier Model', detail: 'No clear tier pattern identified' },
-            ],
-            risk: 'Trade outside macro window carries elevated risk.'
-          },
-          {
-            label: 'INVALID \u2014 BIAS CONFLICT',
-            checks: [
-              { pass: true, label: 'Time Window', detail: timeStr + ' \u2014 Within Macro Range' },
-              { pass: false, label: 'Price vs Midnight Open (00:00)', detail: 'Price above \u2014 Conflicts with long bias' },
-              { pass: false, label: 'Price vs 08:30 Open', detail: 'Price above \u2014 Misaligned' },
-              { pass: true, label: 'Price vs Previous Close (16:14)', detail: 'Price below \u2014 Partial alignment' },
-              { pass: true, label: 'FVG Present', detail: 'Bullish FVG detected but bias unclear' },
-              { pass: false, label: 'Tier Model', detail: 'Conflicting signals across tiers' },
-            ],
-            risk: 'Multiple reference levels misaligned. No trade recommended.'
-          }
-        ];
-        const pick = templates[Math.floor(Math.random() * templates.length)];
-        setVerdict({ valid: false, ...pick });
-      }
+    try {
+      const formData = new FormData();
+      formData.append('chart', file);
+
+      const resp = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'X-API-Key': apiKey },
+        body: formData,
+      });
+
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Analysis failed');
+      setAnalysis(data.analysis);
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setAnalyzing(false);
-    }, delay);
-  }, []);
+    }
+  }, [file, apiKey]);
 
   const reset = useCallback(() => {
-    setFile(null); setPreview(null); setVerdict(null); setAnalyzing(false);
+    setFile(null); setPreview(null); setAnalysis(null); setError(null); setAnalyzing(false);
   }, []);
 
   return (
@@ -321,6 +516,7 @@ function Validator() {
         <h2 className="font-grotesk font-bold text-base text-textPrimary flex items-center gap-2">
           <LucideIcon name="scan-line" size={18} color="#00E5FF"/>
           Chart Validator
+          <span className="text-[10px] font-medium bg-cyan/10 text-cyan px-1.5 py-0.5 rounded">AI Vision</span>
         </h2>
         {file && <button onClick={reset} className="text-textMuted hover:text-textSecondary text-xs flex items-center gap-1 transition"><LucideIcon name="x" size={14}/> Clear</button>}
       </div>
@@ -334,7 +530,7 @@ function Validator() {
         onDrop={onDrop}
         onClick={() => !file && inputRef.current && inputRef.current.click()}
       >
-        <input ref={inputRef} type="file" accept=".png,.jpg,.jpeg" className="hidden" onChange={(e) => handleFile(e.target.files[0])}/>
+        <input ref={inputRef} type="file" accept=".png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => handleFile(e.target.files[0])}/>
 
         {!preview ? (
           <div className="flex flex-col items-center justify-center text-center gap-3">
@@ -342,98 +538,51 @@ function Validator() {
               <LucideIcon name="upload-cloud" size={28} color="#00E5FF"/>
             </div>
             <div>
-              <p className="text-textSecondary text-sm font-medium">Drop your chart screenshot here</p>
-              <p className="text-textMuted text-xs mt-1">or click to upload &middot; PNG, JPG</p>
+              <p className="text-textSecondary text-sm font-medium">Drop your TradingView chart screenshot</p>
+              <p className="text-textMuted text-xs mt-1">1-minute NAS100 chart with labeled levels &middot; PNG, JPG, WebP</p>
             </div>
           </div>
         ) : (
           <div className="relative w-full">
             {analyzing && <div className="scan-overlay"/>}
-            <img src={preview} alt="Chart" className="w-full rounded-lg" style={{maxHeight:'360px', objectFit:'contain', background:'#0d0d0d'}}/>
+            <img src={preview} alt="Chart" className="w-full rounded-lg" style={{maxHeight:'400px', objectFit:'contain', background:'#0d0d0d'}}/>
             {analyzing && <div className="absolute inset-0 bg-bg/30 rounded-lg flex items-center justify-center">
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-8 h-8 border-2 border-cyan border-t-transparent rounded-full animate-spin"/>
-                <span className="text-cyan text-xs font-medium uppercase tracking-wider">Analyzing Structure...</span>
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-10 h-10 border-2 border-cyan border-t-transparent rounded-full animate-spin"/>
+                <span className="text-cyan text-xs font-medium uppercase tracking-wider">Vision Engine Analyzing...</span>
+                <span className="text-textMuted text-[10px]">Reading levels, time, FVG, and bias from chart</span>
               </div>
             </div>}
           </div>
         )}
       </div>
 
+      {/* Error */}
+      {error && (
+        <div className="bg-invalid/10 border border-invalid/20 rounded-lg px-4 py-3 flex items-start gap-2">
+          <LucideIcon name="alert-circle" size={16} color="#FF1744" className="mt-0.5 flex-shrink-0"/>
+          <p className="text-invalid text-xs">{error}</p>
+        </div>
+      )}
+
       {/* Analyze Button */}
-      {preview && !verdict && (
-        <button onClick={analyze} disabled={analyzing} className="btn-primary w-full py-3 rounded-lg text-sm flex items-center justify-center gap-2">
+      {preview && !analysis && (
+        <button onClick={analyze} disabled={analyzing} className="btn-primary w-full py-3.5 rounded-lg text-sm flex items-center justify-center gap-2">
           <LucideIcon name="cpu" size={16} color="#121212"/>
-          {analyzing ? 'Scanning Chart...' : 'Analyze Chart'}
+          {analyzing ? 'Vision Engine Processing...' : 'Analyze Chart — NY Macro Model'}
         </button>
       )}
 
-      {/* Verdict Panel */}
-      {verdict && (
-        <div className="fade-in space-y-3">
-          <div className={'rounded-lg px-4 py-3 flex items-center gap-3 ' + (verdict.valid ? 'bg-valid/10 border border-valid/20' : 'bg-invalid/10 border border-invalid/20')}>
-            <LucideIcon name={verdict.valid ? 'check-circle-2' : 'x-circle'} size={22} color={verdict.valid ? '#00E676' : '#FF1744'}/>
-            <span className={'font-grotesk font-bold text-base ' + (verdict.valid ? 'text-valid' : 'text-invalid')}>{verdict.label}</span>
-          </div>
+      {/* Structured Verdict */}
+      {analysis && <VerdictPanel analysis={analysis}/>}
 
-          <div className="surface rounded-lg divide-y divide-white/5">
-            {verdict.checks.map((c, i) => (
-              <div key={i} className="flex items-start gap-3 px-4 py-2.5">
-                <span className="mt-0.5 flex-shrink-0">
-                  {c.pass
-                    ? <LucideIcon name="check" size={14} color="#00E676"/>
-                    : <LucideIcon name="x" size={14} color="#FF1744"/>
-                  }
-                </span>
-                <div className="min-w-0">
-                  <span className="text-textSecondary text-xs font-medium">{c.label}</span>
-                  <p className={'text-xs mt-0.5 ' + (c.pass ? 'text-valid/80' : 'text-invalid/80')}>{c.detail}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="surface rounded-lg px-4 py-3 flex items-start gap-2">
-            <LucideIcon name="alert-triangle" size={14} color="#FFA726" className="mt-0.5 flex-shrink-0"/>
-            <p className="text-xs text-textSecondary leading-relaxed">{verdict.risk}</p>
-          </div>
-
-          <button onClick={analyze} className="btn-primary w-full py-2.5 rounded-lg text-xs flex items-center justify-center gap-2">
-            <LucideIcon name="refresh-cw" size={14} color="#121212"/>
-            Re-Analyze
-          </button>
-        </div>
+      {/* Re-analyze */}
+      {analysis && (
+        <button onClick={analyze} disabled={analyzing} className="btn-primary w-full py-2.5 rounded-lg text-xs flex items-center justify-center gap-2">
+          <LucideIcon name="refresh-cw" size={14} color="#121212"/>
+          Re-Analyze Chart
+        </button>
       )}
-    </div>
-  );
-}
-
-/* ---- Mentor's Levels ---- */
-function MentorLevels() {
-  const levels = [
-    { label: 'Previous Close (16:14)', value: '1.0847' },
-    { label: 'Midnight Open (00:00)', value: '1.0832' },
-    { label: '08:30 Open', value: '1.0819' },
-    { label: 'NY Open (09:30)', value: '1.0825' },
-  ];
-  return (
-    <div className="surface rounded-lg p-4">
-      <h3 className="font-grotesk font-semibold text-sm text-textPrimary flex items-center gap-2 mb-3">
-        <LucideIcon name="target" size={15} color="#00E5FF"/>
-        Master Levels — Today
-      </h3>
-      <div className="space-y-2">
-        {levels.map((l, i) => (
-          <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-white/[0.02] transition">
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan"/>
-              <span className="text-textSecondary text-xs">{l.label}</span>
-            </div>
-            <span className="font-grotesk font-semibold text-sm text-textPrimary tabular-nums">{l.value}</span>
-          </div>
-        ))}
-      </div>
-      <p className="text-textMuted text-[10px] mt-3 pt-2 border-t border-white/5">Updated by Mentor &middot; Today 08:15 NY</p>
     </div>
   );
 }
@@ -486,12 +635,12 @@ function SessionTimeline({ mins }) {
   );
 }
 
-/* ---- Tier Model ---- */
+/* ---- Tier Model Reference ---- */
 function TierModel() {
   const tiers = [
-    { tier: 1, name: 'Judas Swing', desc: 'False move \u2192 Sweep \u2192 Reversal', icon: 'zap' },
-    { tier: 2, name: 'Continuation', desc: 'No return to first FVG by 09:45', icon: 'trending-up' },
-    { tier: 3, name: 'Consolidation', desc: 'No sweep, accumulation from open', icon: 'pause' },
+    { tier: 1, name: 'Judas Swing', desc: 'False move after open → Liquidity sweep → Reversal. Uses the first FVG.', icon: 'zap' },
+    { tier: 2, name: 'Continuation', desc: 'Market does NOT return to the first FVG by 09:45. Strong continuation expected.', icon: 'trending-up' },
+    { tier: 3, name: 'Consolidation', desc: 'No major sweep. Accumulation from open until macro window.', icon: 'pause' },
   ];
   return (
     <div className="surface rounded-lg p-4">
@@ -519,30 +668,30 @@ function TierModel() {
   );
 }
 
-/* ---- Quick Stats ---- */
-function QuickStats() {
-  const stats = [
-    { label: 'Charts Today', value: '12', icon: 'bar-chart-3' },
-    { label: 'Valid Setups', value: '8', icon: 'check-circle-2', color: '#00E676' },
-    { label: 'Win Rate', value: '67%', icon: 'percent' },
-    { label: 'Streak', value: '3', icon: 'flame', color: '#FFA726' },
-  ];
+/* ---- Directional Framework Reference ---- */
+function DirectionalFramework() {
   return (
     <div className="surface rounded-lg p-4">
       <h3 className="font-grotesk font-semibold text-sm text-textPrimary flex items-center gap-2 mb-3">
-        <LucideIcon name="activity" size={15} color="#00E5FF"/>
-        Quick Stats
+        <LucideIcon name="compass" size={15} color="#00E5FF"/>
+        Directional Framework
       </h3>
-      <div className="grid grid-cols-2 gap-2">
-        {stats.map((s, i) => (
-          <div key={i} className="bg-bg/50 rounded-lg p-3 border border-white/[0.03]">
-            <div className="flex items-center gap-1.5 mb-1">
-              <LucideIcon name={s.icon} size={12} color={s.color || '#616161'}/>
-              <span className="text-textMuted text-[10px] uppercase tracking-wider">{s.label}</span>
-            </div>
-            <span className="font-grotesk font-bold text-xl text-textPrimary">{s.value}</span>
+      <div className="space-y-2">
+        <div className="flex items-start gap-2 p-2 rounded bg-valid/5 border border-valid/10">
+          <LucideIcon name="arrow-down" size={14} color="#00E676" className="mt-0.5"/>
+          <div>
+            <span className="text-xs font-semibold text-valid">Long Bias</span>
+            <p className="text-textMuted text-[11px]">Price BELOW Midnight Open / 08:30 Open / Previous Close</p>
           </div>
-        ))}
+        </div>
+        <div className="flex items-start gap-2 p-2 rounded bg-invalid/5 border border-invalid/10">
+          <LucideIcon name="arrow-up" size={14} color="#FF1744" className="mt-0.5"/>
+          <div>
+            <span className="text-xs font-semibold text-invalid">Short Bias</span>
+            <p className="text-textMuted text-[11px]">Price ABOVE Midnight Open / 08:30 Open / Previous Close</p>
+          </div>
+        </div>
+        <p className="text-textMuted text-[10px] pt-1 border-t border-white/5">Midnight Open is always the primary bias anchor. FVG must form after 09:30 for valid trade.</p>
       </div>
     </div>
   );
@@ -555,14 +704,14 @@ function Footer() {
       <div className="surface rounded-lg px-4 py-3 flex flex-wrap items-center gap-2 text-xs">
         <LucideIcon name="calendar" size={14} color="#616161"/>
         <span className="text-textMuted">Upcoming:</span>
-        <span className="text-textSecondary">NFP &mdash; Apr 4</span>
+        <span className="text-textSecondary">NFP — Apr 4</span>
         <span className="text-textMuted">|</span>
-        <span className="text-textSecondary">CPI &mdash; Apr 10</span>
+        <span className="text-textSecondary">CPI — Apr 10</span>
         <span className="text-textMuted">|</span>
-        <span className="text-textSecondary">FOMC &mdash; Apr 30</span>
+        <span className="text-textSecondary">FOMC — Apr 30</span>
       </div>
       <p className="text-center text-textMuted text-[11px] pb-4">
-        SignalTrading v1.0 &mdash; Built for students of the NY Macro Model
+        SignalTrading v2.0 — AI-Powered Validation for the NY Macro Model
       </p>
     </footer>
   );
@@ -571,6 +720,8 @@ function Footer() {
 /* ---- App ---- */
 function App() {
   const [nyTime, setNyTime] = useState(getNYTime());
+  const [apiKey, saveApiKey] = useApiKey();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const mins = useMemo(() => minutesSinceMidnight(nyTime), [nyTime]);
   const sessionStatus = useMemo(() => getSessionStatus(mins), [mins]);
 
@@ -581,24 +732,36 @@ function App() {
 
   return (
     <div className="min-h-screen bg-bg">
-      <TopBar nyTime={nyTime} mins={mins}/>
+      <TopBar nyTime={nyTime} mins={mins} onSettings={() => setSettingsOpen(true)}/>
       <StatusBar sessionStatus={sessionStatus}/>
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} apiKey={apiKey} onSave={saveApiKey}/>
 
       <main className="max-w-[1440px] mx-auto px-4 sm:px-6 pt-[100px] pb-4">
+        {/* API Key prompt if not set */}
+        {!apiKey && (
+          <div className="mb-4 bg-cyan/5 border border-cyan/20 rounded-lg px-4 py-3 flex items-center gap-3 fade-in">
+            <LucideIcon name="key" size={18} color="#00E5FF"/>
+            <div className="flex-1">
+              <p className="text-cyan text-sm font-medium">API Key Required</p>
+              <p className="text-textMuted text-xs">Click the gear icon to add your Anthropic API key for live chart analysis.</p>
+            </div>
+            <button onClick={() => setSettingsOpen(true)} className="btn-primary px-3 py-1.5 rounded-lg text-xs">Set Key</button>
+          </div>
+        )}
+
         <div className="flex flex-col lg:flex-row gap-4">
-          {/* Left Column */}
+          {/* Left Column — Validator */}
           <div className="w-full lg:w-[60%]">
             <div className="surface rounded-lg p-4 sm:p-5">
-              <Validator/>
+              <Validator apiKey={apiKey}/>
             </div>
           </div>
 
-          {/* Right Column */}
+          {/* Right Column — Reference Panels */}
           <div className="w-full lg:w-[40%] space-y-4">
-            <MentorLevels/>
             <SessionTimeline mins={mins}/>
+            <DirectionalFramework/>
             <TierModel/>
-            <QuickStats/>
           </div>
         </div>
 
