@@ -1,4 +1,4 @@
-const Anthropic = require('@anthropic-ai/sdk');
+// Uses OpenRouter free API (OpenAI-compatible)
 
 const VISION_SYSTEM_PROMPT = `
 You are an expert analyst of the NY Session First Macro Model for NAS100/US100/USTEC
@@ -246,9 +246,9 @@ async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const apiKey = req.headers['x-api-key'] || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey || apiKey === 'your-api-key-here') {
-      return res.status(400).json({ error: 'No API key provided. Set your Anthropic API key in settings.' });
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      return res.status(400).json({ error: 'No API key configured.' });
     }
 
     const { image, mediaType } = req.body;
@@ -256,34 +256,38 @@ async function handler(req, res) {
       return res.status(400).json({ error: 'No chart image provided.' });
     }
 
-    const anthropic = new Anthropic({ apiKey });
-
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      system: VISION_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mediaType || 'image/png',
-                data: image,
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.0-flash-exp:free',
+        messages: [
+          { role: 'system', content: VISION_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: { url: `data:${mediaType || 'image/png'};base64,${image}` },
               },
-            },
-            {
-              type: 'text',
-              text: 'Analyze this TradingView chart screenshot according to the NY Session First Macro Model rules. Return the structured JSON verdict.',
-            },
-          ],
-        },
-      ],
+              {
+                type: 'text',
+                text: 'Analyze this TradingView chart screenshot according to the NY Session First Macro Model rules. Return the structured JSON verdict.',
+              },
+            ],
+          },
+        ],
+        max_tokens: 2000,
+      }),
     });
 
-    const rawText = response.content[0].text;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || 'API call failed');
+
+    const rawText = data.choices[0].message.content;
 
     let analysis;
     try {

@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
-const Anthropic = require('@anthropic-ai/sdk');
+// Uses OpenRouter free API
 const path = require('path');
 const fs = require('fs');
 
@@ -264,9 +264,9 @@ no explanation, no markdown — raw JSON only:
 // POST /api/analyze — accepts chart image (JSON base64), returns Vision analysis
 app.post('/api/analyze', async (req, res) => {
   try {
-    const apiKey = req.headers['x-api-key'] || process.env.ANTHROPIC_API_KEY;
-    if (!apiKey || apiKey === 'your-api-key-here') {
-      return res.status(400).json({ error: 'No API key provided. Set your Anthropic API key in settings.' });
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      return res.status(400).json({ error: 'No API key configured.' });
     }
 
     const { image, mediaType: mt } = req.body;
@@ -274,36 +274,40 @@ app.post('/api/analyze', async (req, res) => {
       return res.status(400).json({ error: 'No chart image provided.' });
     }
 
-    const anthropic = new Anthropic({ apiKey });
-    const base64Image = image;
     const mediaType = mt || 'image/png';
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      system: VISION_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mediaType,
-                data: base64Image,
+    const result = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.0-flash-exp:free',
+        messages: [
+          { role: 'system', content: VISION_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image_url',
+                image_url: { url: `data:${mediaType};base64,${image}` },
               },
-            },
-            {
-              type: 'text',
-              text: 'Analyze this TradingView chart screenshot according to the NY Session First Macro Model rules. Return the structured JSON verdict.',
-            },
-          ],
-        },
-      ],
+              {
+                type: 'text',
+                text: 'Analyze this TradingView chart screenshot according to the NY Session First Macro Model rules. Return the structured JSON verdict.',
+              },
+            ],
+          },
+        ],
+        max_tokens: 2000,
+      }),
     });
 
-    const rawText = response.content[0].text;
+    const data = await result.json();
+    if (!result.ok) throw new Error(data.error?.message || 'API call failed');
+
+    const rawText = data.choices[0].message.content;
 
     // Try to parse JSON from the response
     let analysis;
