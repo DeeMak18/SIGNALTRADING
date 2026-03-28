@@ -236,16 +236,7 @@ no explanation, no markdown — raw JSON only:
 }
 `;
 
-// Increase Vercel body size limit to 10MB for base64 images
-module.exports.config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '10mb',
-    },
-  },
-};
-
-module.exports = async function handler(req, res) {
+async function handler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -318,4 +309,15 @@ module.exports = async function handler(req, res) {
       error: err.message || 'Analysis failed. Check your API key and try again.',
     });
   }
+}
+
+// Attach config AFTER defining handler so it isn't overwritten
+handler.config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
 };
+
+module.exports = handler;
