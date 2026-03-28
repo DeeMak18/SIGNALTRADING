@@ -1,29 +1,4 @@
-require('dotenv').config();
-const express = require('express');
-const multer = require('multer');
-const cors = require('cors');
 const Anthropic = require('@anthropic-ai/sdk');
-const path = require('path');
-const fs = require('fs');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(cors());
-app.use(express.json({ limit: '20mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only PNG, JPG, and WebP images are allowed'));
-    }
-  }
-});
 
 const VISION_SYSTEM_PROMPT = `
 You are an expert analyst of the NY Session First Macro Model for NAS100/US100/USTEC
@@ -261,22 +236,27 @@ no explanation, no markdown — raw JSON only:
 }
 `;
 
-// POST /api/analyze — accepts chart image (JSON base64), returns Vision analysis
-app.post('/api/analyze', async (req, res) => {
+module.exports = async function handler(req, res) {
+  // CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
   try {
     const apiKey = req.headers['x-api-key'] || process.env.ANTHROPIC_API_KEY;
     if (!apiKey || apiKey === 'your-api-key-here') {
       return res.status(400).json({ error: 'No API key provided. Set your Anthropic API key in settings.' });
     }
 
-    const { image, mediaType: mt } = req.body;
+    const { image, mediaType } = req.body;
     if (!image) {
       return res.status(400).json({ error: 'No chart image provided.' });
     }
 
     const anthropic = new Anthropic({ apiKey });
-    const base64Image = image;
-    const mediaType = mt || 'image/png';
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -290,8 +270,8 @@ app.post('/api/analyze', async (req, res) => {
               type: 'image',
               source: {
                 type: 'base64',
-                media_type: mediaType,
-                data: base64Image,
+                media_type: mediaType || 'image/png',
+                data: image,
               },
             },
             {
@@ -305,17 +285,14 @@ app.post('/api/analyze', async (req, res) => {
 
     const rawText = response.content[0].text;
 
-    // Try to parse JSON from the response
     let analysis;
     try {
       analysis = JSON.parse(rawText);
     } catch {
-      // If Claude wrapped it in markdown code fences, extract it
       const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (jsonMatch) {
         analysis = JSON.parse(jsonMatch[1].trim());
       } else {
-        // Try to find JSON object in the text
         const objMatch = rawText.match(/\{[\s\S]*\}/);
         if (objMatch) {
           analysis = JSON.parse(objMatch[0]);
@@ -332,19 +309,4 @@ app.post('/api/analyze', async (req, res) => {
       error: err.message || 'Analysis failed. Check your API key and try again.',
     });
   }
-});
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', version: '2.0.0' });
-});
-
-// Serve frontend
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.listen(PORT, () => {
-  console.log(`\n  SIGNALTRADING v2.0`);
-  console.log(`  → http://localhost:${PORT}\n`);
-});
+};

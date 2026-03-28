@@ -487,13 +487,18 @@ function Validator({ apiKey }) {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('chart', file);
+      // Convert file to base64
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
 
       const resp = await fetch('/api/analyze', {
         method: 'POST',
-        headers: { 'X-API-Key': apiKey },
-        body: formData,
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify({ image: base64, mediaType: file.type }),
       });
 
       const data = await resp.json();
