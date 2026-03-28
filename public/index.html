@@ -478,10 +478,6 @@ function Validator({ apiKey }) {
   }, [handleFile]);
 
   const analyze = useCallback(async () => {
-    if (!apiKey) {
-      setError('No API key set. Click the gear icon in the top bar to add your Anthropic API key.');
-      return;
-    }
     setAnalyzing(true);
     setAnalysis(null);
     setError(null);
@@ -495,9 +491,12 @@ function Validator({ apiKey }) {
         reader.readAsDataURL(file);
       });
 
+      const headers = { 'Content-Type': 'application/json' };
+      if (apiKey) headers['X-API-Key'] = apiKey;
+
       const resp = await fetch('/api/analyze', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers,
         body: JSON.stringify({ image: base64, mediaType: file.type }),
       });
 
@@ -742,18 +741,6 @@ function App() {
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} apiKey={apiKey} onSave={saveApiKey}/>
 
       <main className="max-w-[1440px] mx-auto px-4 sm:px-6 pt-[100px] pb-4">
-        {/* API Key prompt if not set */}
-        {!apiKey && (
-          <div className="mb-4 bg-cyan/5 border border-cyan/20 rounded-lg px-4 py-3 flex items-center gap-3 fade-in">
-            <LucideIcon name="key" size={18} color="#00E5FF"/>
-            <div className="flex-1">
-              <p className="text-cyan text-sm font-medium">API Key Required</p>
-              <p className="text-textMuted text-xs">Click the gear icon to add your Anthropic API key for live chart analysis.</p>
-            </div>
-            <button onClick={() => setSettingsOpen(true)} className="btn-primary px-3 py-1.5 rounded-lg text-xs">Set Key</button>
-          </div>
-        )}
-
         <div className="flex flex-col lg:flex-row gap-4">
           {/* Left Column — Validator */}
           <div className="w-full lg:w-[60%]">
