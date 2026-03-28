@@ -263,7 +263,7 @@ async function handler(req, res) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-exp:free',
+        model: 'google/gemma-3-27b-it:free',
         messages: [
           { role: 'system', content: VISION_SYSTEM_PROMPT },
           {
